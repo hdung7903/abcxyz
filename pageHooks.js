@@ -531,7 +531,7 @@ function postLearningHours(durationMs) {
               courseId: t.courseId,
               courseBranchId: t.courseBranchId,
               eventPlatform: t.eventPlatform,
-              userActionType: 'VIDEO_PLAYING',
+              userActionType: 'VIDEO_IS_PLAYING',
               durationMilliSeconds: durationMs,
               eventOs: t.eventOs,
               clientDateTime: new Date().toISOString(),
