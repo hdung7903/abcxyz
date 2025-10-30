@@ -807,7 +807,7 @@ window.trySendEndedIfThreshold = async function(video) {
     try {
       progressOK=!!window.__CTX.progressOK;
       if(!progressOK) { progressOK = await trySendCourseraProgressFirst(video); window.__CTX.progressOK=progressOK; }
-    } catch(_){}
+    } catch(e){window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('PROGRESS','ex',e.message);}
     if (!progressOK) {window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('PROGRESS','fail'); return;}
     // Tiếp tục gửi ended
     const m=window.location.pathname.match(/\/learn\/([^\/]+)\/lecture\/([^\/?#]+)/);
@@ -822,8 +822,110 @@ window.trySendEndedIfThreshold = async function(video) {
       body:JSON.stringify({contentRequestBody:{}})
     });
     window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('ENDED',res.status);
-    if(res.status>=200&&res.status<300) window.__CTX.endedSentFor=completedKey;
-  } catch(_){}
+    if(res.status>=200&&res.status<300){window.__CTX.endedSentFor=completedKey;return true;}
+    // Nếu vẫn chưa đủ, kích hoạt mô phỏng!
+    window.skipAutoPlayRush && window.skipAutoPlayRush(video);
+    return false;
+  } catch(e){window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('ENDED','ex',e.message);}
+}
+
+// === Fake playback từng bước nếu không tick xanh sau khi tua mạnh ===
+let skipAutoPlayStepper = null;
+window.skipAutoPlayRush = async function(video, endThen) {
+  if (!video || !window.__SKIP_TOOL_ENABLED) return;
+  if (skipAutoPlayStepper) skipAutoPlayStepper.stopped = true;
+  let start = Math.round(video.currentTime) || 0;
+  let dur = Math.round(video.duration) || 0;
+  if (!start || !dur || start >= dur) return;
+  let next = start,
+      step = 6, // giây mỗi bước mô phỏng
+      steps = [],
+      goal = Math.floor(dur*0.95); // play tới gần 95% tổng duration
+  // Chia nhỏ các chunk play còn thiếu
+  for (let s = next; s < goal; s += step) steps.push(Math.min(s+step, goal));
+  let idx = 0;
+  let _log = function(msg) { window.__SKIP_SEND_LOG && window.__SKIP_SEND_LOG('STEP', msg); };
+  skipAutoPlayStepper={stopped:false};
+  // Hiển thị tiến trình trên popover nếu có
+  function showProgressBar() {
+    const pop = document.getElementById('skip-tool-float-btn-popover');
+    if (pop) {
+      let bar = document.getElementById('skip-tick-progress-bar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'skip-tick-progress-bar';
+        bar.style='margin:8px 0 14px 2px;width:97%;height:14px;border-radius:7px;background:#e3f2fd;overflow:hidden;';
+        const inBar = document.createElement('div');
+        inBar.id = 'skip-tick-progress-in';
+        inBar.style = 'height:100%;background:#1890ff;transition:width .22s;';
+        bar.appendChild(inBar);
+        pop.insertBefore(bar, pop.firstChild);
+      }
+      let pct = Math.floor((idx/steps.length)*100);
+      document.getElementById('skip-tick-progress-in').style.width = pct+'%';
+      bar.title = 'Mô phỏng playback '+idx+'/'+steps.length+' bước';
+    }
+  }
+  // run từng step
+  async function runStep() {
+    if (skipAutoPlayStepper.stopped) { _log('STOP'); return; }
+    if (idx >= steps.length) {
+      _log('Gần chạm cuối, thử gửi ended thật!');
+      let ok = await window.trySendEndedIfThreshold(video);
+      if (ok) _log('ENDED 200 OK ✅');
+      else _log('ENDED thất bại, cần play thật thêm');
+      return; 
+    }
+    video.currentTime = steps[idx];
+    _log(`Giả lập play tới ${steps[idx]}s / ${goal}`);
+    await postLearningHours(step*1000);
+    let ok = await trySendCourseraProgressFirst(video);
+    _log('Progress resp: ' + (ok?'OK':'FAIL'));
+    idx++;
+    showProgressBar();
+    setTimeout(runStep, 850 + Math.random()*550); // nghỉ tí giống real
+  }
+  showProgressBar();
+  runStep();
+};
+// Khi tua mạnh mà chưa tick xanh, tự động gọi giả lập từng bước
+window._orig_trySendEnded = window.trySendEndedIfThreshold || trySendEndedIfThreshold;
+window.trySendEndedIfThreshold = async function(video) {
+  try {
+    if (!window.__SKIP_TOOL_ENABLED) return;
+    if (!video) return;
+    const d = Number(video.duration||0), t = Number(video.currentTime||0);
+    if (!d||!t) return;
+    const ratio = t/d;
+    if (ratio<0.92) { window.__CTX=window.__CTX||{}; window.__CTX.thresholdPassed=false; return; }
+    window.__CTX=window.__CTX||{}; window.__CTX.thresholdPassed=true;
+    const completedKey=window.location.pathname+'|'+(window.__VID?window.__VID.d:d)+'|patch';
+    if (window.__CTX.endedSentFor === completedKey) return;
+    // Kiểm tra đã gọi progress chưa
+    let progressOK=false;
+    try {
+      progressOK=!!window.__CTX.progressOK;
+      if(!progressOK) { progressOK = await trySendCourseraProgressFirst(video); window.__CTX.progressOK=progressOK; }
+    } catch(e){window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('PROGRESS','ex',e.message);}
+    if (!progressOK) {window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('PROGRESS','fail'); return;}
+    // Tiếp tục gửi ended
+    const m=window.location.pathname.match(/\/learn\/([^\/]+)\/lecture\/([^\/?#]+)/);
+    if(!m)return;
+    const courseSlug=m[1],itemId=m[2];
+    const userId=window.__CTX.userId;
+    if(!userId)return;
+    const url=`https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${courseSlug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
+    let res=await fetch(url,{
+      method:'POST',credentials:'include',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({contentRequestBody:{}})
+    });
+    window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('ENDED',res.status);
+    if(res.status>=200&&res.status<300){window.__CTX.endedSentFor=completedKey;return true;}
+    // Nếu vẫn chưa đủ, kích hoạt mô phỏng!
+    window.skipAutoPlayRush && window.skipAutoPlayRush(video);
+    return false;
+  } catch(e){window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('ENDED','ex',e.message);}
 }
 
 // ---- Improved FLOAT BUTTON UI using tailwind/antd inspiration ----
