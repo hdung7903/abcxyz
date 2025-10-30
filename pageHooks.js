@@ -133,6 +133,23 @@
             }
           } catch(_) {}
 
+          // Log end-event metrics
+          try {
+            const u = String(url);
+            const isEnded = /\/api\/opencourse\.v1\/user\/\d+\/course\/.+\/item\/.+\/lecture\/videoEvents\/ended/.test(u);
+            if (isEnded && method.toUpperCase() === 'POST') {
+              const vinfo = (window.__VID && typeof window.__VID.t === 'number') ? window.__VID : {};
+              const pct = (vinfo.t && vinfo.d) ? ((vinfo.t / vinfo.d) * 100).toFixed(1) : 'n/a';
+              console.group('[SkipDebug][end-event][fetch]');
+              console.log('url:', url);
+              console.log('currentTime:', vinfo.t);
+              console.log('duration:', vinfo.d);
+              console.log('percent:', pct + '%');
+              console.trace('Stack');
+              console.groupEnd();
+            }
+          } catch(_) {}
+
           // Capture LearningHours GraphQL payload and synthesize heartbeats
           try {
             const isLearningHours = (typeof url === 'string' && url.includes('/graphql-gateway') && url.includes('opname=LearningHours_SendEvent'))
@@ -230,6 +247,23 @@
                 window.addEventListener('beforeunload', () => { try { clearInterval(window.__LH.interval); } catch(_) {} });
               }
             }
+          }
+        } catch(_) {}
+
+        // Log end-event metrics (XHR)
+        try {
+          const u = String(url);
+          const isEnded = /\/api\/opencourse\.v1\/user\/\d+\/course\/.+\/item\/.+\/lecture\/videoEvents\/ended/.test(u);
+          if (isEnded && lastMethod.toUpperCase() === 'POST') {
+            const vinfo = (window.__VID && typeof window.__VID.t === 'number') ? window.__VID : {};
+            const pct = (vinfo.t && vinfo.d) ? ((vinfo.t / vinfo.d) * 100).toFixed(1) : 'n/a';
+            console.group('[SkipDebug][end-event][xhr]');
+            console.log('url:', url);
+            console.log('currentTime:', vinfo.t);
+            console.log('duration:', vinfo.d);
+            console.log('percent:', pct + '%');
+            console.trace('Stack');
+            console.groupEnd();
           }
         } catch(_) {}
 
@@ -412,7 +446,11 @@ function postLearningHours(durationMs) {
         } catch(_) {}
       }, true);
       v.addEventListener('timeupdate', function() {
-        try { v.__lastTime = v.currentTime || 0; } catch(_) {}
+        try {
+          v.__lastTime = v.currentTime || 0;
+          const d = v.duration || 0;
+          window.__VID = { t: v.__lastTime, d };
+        } catch(_) {}
       }, true);
     };
 
