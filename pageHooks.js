@@ -642,4 +642,123 @@ function trySendEndedIfThreshold(video) {
   } catch(_) {}
 }
 
+(function setupSkipToolButton() {
+  try {
+    // Only inject if not present
+    if (document.getElementById('skip-tool-float-btn')) return;
+
+    // Float CSS
+    const style = document.createElement('style');
+    style.innerHTML = `
+      #skip-tool-float-btn {
+        position: fixed;
+        right: 28px;
+        bottom: 36px;
+        z-index: 2147483647;
+        width: 56px; height: 56px;
+        border-radius: 50%;
+        background: #2196F3;
+        box-shadow: 0 2px 12px rgba(40,60,120,0.21);
+        color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 32px;
+        cursor: pointer;
+        opacity: 0.93;
+        transition: background 0.2s;
+        user-select: none;
+      }
+      #skip-tool-float-btn.off { background: #a9a9a9; color: #fff; opacity: 0.5; }
+      #skip-tool-float-btn:hover { opacity: 1; box-shadow: 0 2px 24px rgba(50,80,180,0.15); }
+      #skip-tool-float-btn-label {
+        position: absolute; right: 62px; bottom: 10px; background: #333; color: #fff;
+        padding: 8px 16px; border-radius: 8px; font-size: 15px; opacity: 0.98; pointer-events: none;
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Float button node
+    const btn = document.createElement('div');
+    btn.id = 'skip-tool-float-btn';
+    btn.innerHTML = '<span style="font-size:33px">⏩</span>';
+    btn.title = 'Bật/Tắt Coursera Skip Tool';
+
+    function setBtnState(enabled) {
+      if (enabled) {
+        btn.classList.remove('off');
+        btn.title = 'Đang bật: Tự động skip và tích xanh (click để tắt)';
+      } else {
+        btn.classList.add('off');
+        btn.title = 'ĐANG TẮT: Không tự động skip/fake time (click để bật)';
+      }
+    }
+
+    // State logic
+    window.__SKIP_TOOL_ENABLED = (window.__SKIP_TOOL_ENABLED === undefined) ? true : window.__SKIP_TOOL_ENABLED;
+    setBtnState(window.__SKIP_TOOL_ENABLED);
+
+    btn.addEventListener('click', function () {
+      window.__SKIP_TOOL_ENABLED = !(!!window.__SKIP_TOOL_ENABLED);
+      setBtnState(window.__SKIP_TOOL_ENABLED);
+      window.localStorage.setItem('__SKIP_TOOL_ENABLED', window.__SKIP_TOOL_ENABLED ? '1' : '0');
+    });
+
+    // Show/hide label on hover
+    let label;
+    btn.addEventListener('mouseenter', function() {
+      label = document.createElement('span');
+      label.id = 'skip-tool-float-btn-label';
+      label.textContent = window.__SKIP_TOOL_ENABLED ? 'Đang bật: Skip & Tick xanh' : 'ĐANG TẮT: Không skip';
+      document.body.appendChild(label);
+    });
+    btn.addEventListener('mouseleave', function() {
+      if (label && label.parentNode) label.parentNode.removeChild(label);
+    });
+
+    document.body.appendChild(btn);
+
+    // Auto-restore state
+    try {
+      const stored = window.localStorage.getItem('__SKIP_TOOL_ENABLED');
+      if (stored === '1') { window.__SKIP_TOOL_ENABLED = true; setBtnState(true); }
+      else if (stored === '0') { window.__SKIP_TOOL_ENABLED = false; setBtnState(false); }
+    } catch(_) {}
+  } catch(e) { console.warn('SkipTool float button inject fail', e); }
+})();
+
+// Patch: ĐIỀU KIỆN HOẠT ĐỘNG tih năng skip/fake chỉ KHI window.__SKIP_TOOL_ENABLED === true
+// === PATCH CÁC CHỨC NĂNG AUTO-SKIP, FAKE LEARNING, AUTO COMPLETION... ===
+(function patchSkipGuardLogic() {
+  // Patch toàn bộ entry cho hook và các hàm phụ
+  const guard = (fn) => function patched() {
+    if (!window.__SKIP_TOOL_ENABLED) return;
+    return fn.apply(this, arguments);
+  };
+  try {
+    // Patch các sự kiện video
+    const proto = HTMLMediaElement.prototype;
+    const origSet = Object.getOwnPropertyDescriptor(proto, 'currentTime')?.set;
+    const origGet = Object.getOwnPropertyDescriptor(proto, 'currentTime')?.get;
+    if (origSet && origGet && !origSet.__skipGuardWrap) {
+      Object.defineProperty(proto, 'currentTime', {
+        configurable: true,
+        enumerable: true,
+        get: function() { return origGet.call(this); },
+        set: function(v) {
+          if (!window.__SKIP_TOOL_ENABLED) return origSet.call(this, v);
+          return origSet.call(this, v);
+        }
+      });
+      Object.defineProperty(proto, 'currentTime', { __skipGuardWrap: true });
+    }
+  } catch(_) {}
+  // patch postLearningHours
+  if (typeof postLearningHours === 'function') {
+    window.postLearningHours = guard(postLearningHours);
+  }
+  // patch trySendEndedIfThreshold
+  if (typeof trySendEndedIfThreshold === 'function') {
+    window.trySendEndedIfThreshold = guard(trySendEndedIfThreshold);
+  }
+})();
+
 
