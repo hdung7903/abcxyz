@@ -1,9 +1,5 @@
 (() => {
   const BANNER_TEXT = 'Skipping forward is only available on video sections you have already watched';
-  const CONFIG_KEY = '__SkipDebugConfig';
-  try {
-    window[CONFIG_KEY] = window[CONFIG_KEY] || { suppressBanner: false };
-  } catch(_) {}
 
   function nodeContainsBanner(node) {
     try {
@@ -62,12 +58,8 @@
         const child = args[0];
         if (nodeContainsBanner(child) || nodeContainsBanner(this)) {
           logBanner(method, this, child);
-          try {
-            if (window[CONFIG_KEY] && window[CONFIG_KEY].suppressBanner) {
-              // Skip inserting the banner to allow testing without UI restriction
-              return child;
-            }
-          } catch(_) {}
+          // Always suppress inserting the banner
+          return child;
         }
       } catch(_) {}
       return orig.apply(this, args);
@@ -88,6 +80,12 @@
         for (const n of m.addedNodes) {
           if (nodeContainsBanner(n)) {
             logBanner('MutationObserver', m.target, n);
+            try {
+              // Remove the banner node and its alert container if present
+              const alertContainer = (n instanceof Element) ? n.closest('[role="alert"]') : null;
+              if (n.remove) n.remove();
+              if (alertContainer && alertContainer.remove) alertContainer.remove();
+            } catch(_) {}
           }
         }
       }
