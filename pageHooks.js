@@ -276,6 +276,26 @@
           }
         } catch(_) {}
 
+        // If threshold passed but server expects progress first, wait for a successful progress call then send ended
+        try {
+          const u = String(url);
+          const isProgress = /\/api\/opencourse\.v1\/user\/\d+\/course\/.+\/item\/.+\/lecture\/videoEvents\/progress/.test(u);
+          if (isProgress && window.__CTX && window.__CTX.thresholdPassed) {
+            const xhr = this;
+            const origOnload = xhr.onload;
+            xhr.onload = function() {
+              try {
+                const ok = (xhr.status >= 200 && xhr.status < 300);
+                if (ok) {
+                  const v = document.querySelector('video');
+                  if (v) trySendEndedIfThreshold(v);
+                }
+              } catch(_) {}
+              if (origOnload) return origOnload.apply(this, arguments);
+            };
+          }
+        } catch(_) {}
+
         // Short-circuit eventing/analytics XHR
         try {
           const u = String(url);
@@ -507,9 +527,10 @@ function trySendEndedIfThreshold(video) {
     const t = Number(video.currentTime || 0);
     if (!d || !t) return;
     const ratio = t / d;
-    if (ratio < 0.92) return; // target ~92%
-
+    if (ratio < 0.92) { window.__CTX = window.__CTX || {}; window.__CTX.thresholdPassed = false; return; }
     window.__CTX = window.__CTX || {};
+    window.__CTX.thresholdPassed = true;
+
     if (window.__CTX.endedSentFor === (window.location.pathname + '|' + (window.__VID ? window.__VID.d : d))) return;
 
     // Derive courseSlug and itemId from URL: /learn/:slug/lecture/:itemId
