@@ -522,6 +522,7 @@ function postLearningHours(durationMs) {
     const qs = window.__LH.qs ? ('?' + window.__LH.qs) : '?opname=LearningHours_SendEvent';
     const url = endpointBase + qs;
     const t = window.__LH.template;
+    const intDuration = Math.max(1, Math.round(durationMs)); // đảm bảo int và >0
     const payload = [
       {
         operationName: 'LearningHours_SendEvent',
@@ -532,7 +533,7 @@ function postLearningHours(durationMs) {
               courseBranchId: t.courseBranchId,
               eventPlatform: t.eventPlatform,
               userActionType: 'VIDEO_IS_PLAYING',
-              durationMilliSeconds: durationMs,
+              durationMilliSeconds: intDuration,
               eventOs: t.eventOs,
               clientDateTime: new Date().toISOString(),
               deviceId: t.deviceId,
@@ -553,6 +554,8 @@ function postLearningHours(durationMs) {
         'content-type': 'application/json'
       },
       body: JSON.stringify(payload)
+    }).then(res => {
+      window.__SKIP_SEND_LOG && window.__SKIP_SEND_LOG('LH', intDuration);
     }).catch(() => {});
   } catch(_) {}
 }
@@ -722,25 +725,18 @@ function trySendEndedIfThreshold(video) {
     function setBtnState(enabled) {
       if (enabled) {
         btn.classList.add('active'); btn.classList.remove('off');
-        btn.title = 'Đang bật: Tự động skip và tích xanh (click để tắt)';
+        btn.title = 'Đang bật: Tự động skip và tích xanh (click để mở log/tool)';
       } else {
         btn.classList.remove('active'); btn.classList.add('off');
-        btn.title = 'ĐANG TẮT: Không tự động skip/fake time (click để bật)';
+        btn.title = 'ĐANG TẮT: Không tự động skip/fake time (click để mở tool)';
       }
     }
     window.__SKIP_TOOL_ENABLED = (window.__SKIP_TOOL_ENABLED === undefined) ? true : window.__SKIP_TOOL_ENABLED;
     setBtnState(window.__SKIP_TOOL_ENABLED);
 
     btn.addEventListener('click', function (e) {
-      window.__SKIP_TOOL_ENABLED = !(!!window.__SKIP_TOOL_ENABLED);
-      setBtnState(window.__SKIP_TOOL_ENABLED);
-      window.localStorage.setItem('__SKIP_TOOL_ENABLED', window.__SKIP_TOOL_ENABLED ? '1' : '0');
-      // Ripple effect
-      btn.classList.add('ripple');
-      setTimeout(()=>btn.classList.remove('ripple'), 340);
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
+      if(popover&&popover.parentNode){popover.parentNode.removeChild(popover);popover=null;return;}
+      popover=document.createElement('div');popover.id='skip-tool-float-btn-popover';document.body.appendChild(popover);setTimeout(renderPopoverIfOpen,20);e.preventDefault();e.stopPropagation();return false;
     });
     // Tooltip
     let label;
