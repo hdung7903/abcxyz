@@ -634,7 +634,7 @@ function trySendEndedIfThreshold(video) {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({})
+      body: JSON.stringify({ contentRequestBody: {} })
     }).then(() => {
       window.__CTX.endedSentFor = window.location.pathname + '|' + (window.__VID ? window.__VID.d : d);
       console.log('[SkipDebug][ended][auto]', { url, percent: (ratio * 100).toFixed(1) + '%' });
