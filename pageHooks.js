@@ -642,87 +642,181 @@ function trySendEndedIfThreshold(video) {
   } catch(_) {}
 }
 
+// ---- Improved FLOAT BUTTON UI using tailwind/antd inspiration ----
 (function setupSkipToolButton() {
   try {
-    // Only inject if not present
     if (document.getElementById('skip-tool-float-btn')) return;
 
-    // Float CSS
+    // Inline modern gradient+shadow style
     const style = document.createElement('style');
     style.innerHTML = `
       #skip-tool-float-btn {
         position: fixed;
-        right: 28px;
-        bottom: 36px;
+        right: 32px;
+        bottom: 38px;
         z-index: 2147483647;
-        width: 56px; height: 56px;
+        width: 60px; height: 60px;
         border-radius: 50%;
-        background: #2196F3;
-        box-shadow: 0 2px 12px rgba(40,60,120,0.21);
+        background: linear-gradient(135deg,#00c6ff,#0072ff 80%);
+        box-shadow: 0 5px 35px 0 rgba(24,118,255,0.30),0 1.5px 8px 0 rgba(28,60,120,0.07);
         color: #fff;
         display: flex; align-items: center; justify-content: center;
         font-size: 32px;
         cursor: pointer;
-        opacity: 0.93;
-        transition: background 0.2s;
+        opacity: 0.97;
+        outline: none; border: none;
+        transition: background 0.21s, box-shadow 0.19s, opacity 0.19s, filter 0.15s;
         user-select: none;
+        overflow: visible;
       }
-      #skip-tool-float-btn.off { background: #a9a9a9; color: #fff; opacity: 0.5; }
-      #skip-tool-float-btn:hover { opacity: 1; box-shadow: 0 2px 24px rgba(50,80,180,0.15); }
+      #skip-tool-float-btn.off {
+        background: linear-gradient(135deg,#b0b0b0,#747474 80%);
+        color: #f9f9f9;
+        filter: grayscale(0.4) brightness(0.85);
+        opacity: 0.77;
+      }
+      #skip-tool-float-btn:active {
+        box-shadow: 0 1px 6px 0 #2196F3;
+        opacity: 0.88;
+      }
+      #skip-tool-float-btn .twicon {
+        transition: transform 0.23s cubic-bezier(.82,0,.47,1.26);
+      }
+      #skip-tool-float-btn.active .twicon {
+        transform: scale(1.22) rotate(16deg);
+      }
+      #skip-tool-float-btn-ripple {
+        position: absolute; left: 0; top: 0;
+        width: 100%; height: 100%; border-radius:50%;
+        background: rgba(255,255,255,.28);
+        opacity: 0; pointer-events:none;
+        transition: opacity 0.31s, transform 0.35s;
+      }
+      #skip-tool-float-btn.ripple #skip-tool-float-btn-ripple {
+        opacity: 1; transform: scale(1.65);
+      }
       #skip-tool-float-btn-label {
-        position: absolute; right: 62px; bottom: 10px; background: #333; color: #fff;
-        padding: 8px 16px; border-radius: 8px; font-size: 15px; opacity: 0.98; pointer-events: none;
+        pointer-events: none;
+        position: absolute; right: 72px; bottom: 10px;
+        background: rgba(24,24,30,.97); color: #d2e3ff;
+        padding: 9px 22px; border-radius: 10px; font-size: 15px; line-height: 1.45;
+        box-shadow: 0px 3px 8px 0 rgba(24,30,70,0.19);
+        font-weight: 500; letter-spacing: 0.01em;
+        opacity: 1;
+        white-space: nowrap;
+        filter: drop-shadow(0 1.5px 2px #0001);
       }
     `;
     document.head.appendChild(style);
 
-    // Float button node
+    // Button
     const btn = document.createElement('div');
     btn.id = 'skip-tool-float-btn';
-    btn.innerHTML = '<span style="font-size:33px">⏩</span>';
-    btn.title = 'Bật/Tắt Coursera Skip Tool';
+    btn.innerHTML = `
+      <span class="twicon" style="font-size:35px;display:inline-block">⏩</span>
+      <span id="skip-tool-float-btn-ripple"></span>
+    `;
+    btn.title = 'Bật/Tắt Skip Tool';
+    btn.className = window.__SKIP_TOOL_ENABLED ? 'active' : 'off';
 
     function setBtnState(enabled) {
       if (enabled) {
-        btn.classList.remove('off');
+        btn.classList.add('active'); btn.classList.remove('off');
         btn.title = 'Đang bật: Tự động skip và tích xanh (click để tắt)';
       } else {
-        btn.classList.add('off');
+        btn.classList.remove('active'); btn.classList.add('off');
         btn.title = 'ĐANG TẮT: Không tự động skip/fake time (click để bật)';
       }
     }
-
-    // State logic
     window.__SKIP_TOOL_ENABLED = (window.__SKIP_TOOL_ENABLED === undefined) ? true : window.__SKIP_TOOL_ENABLED;
     setBtnState(window.__SKIP_TOOL_ENABLED);
 
-    btn.addEventListener('click', function () {
+    btn.addEventListener('click', function (e) {
       window.__SKIP_TOOL_ENABLED = !(!!window.__SKIP_TOOL_ENABLED);
       setBtnState(window.__SKIP_TOOL_ENABLED);
       window.localStorage.setItem('__SKIP_TOOL_ENABLED', window.__SKIP_TOOL_ENABLED ? '1' : '0');
+      // Ripple effect
+      btn.classList.add('ripple');
+      setTimeout(()=>btn.classList.remove('ripple'), 340);
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
     });
-
-    // Show/hide label on hover
+    // Tooltip
     let label;
     btn.addEventListener('mouseenter', function() {
+      if (label) return;
       label = document.createElement('span');
       label.id = 'skip-tool-float-btn-label';
-      label.textContent = window.__SKIP_TOOL_ENABLED ? 'Đang bật: Skip & Tick xanh' : 'ĐANG TẮT: Không skip';
+      label.textContent = window.__SKIP_TOOL_ENABLED ? 'Đang bật: Skip & Tick xanh tự động' : 'TẮT: Không skip/fake';
       document.body.appendChild(label);
+      const rect = btn.getBoundingClientRect();
+      label.style.right = (window.innerWidth - rect.right + 18)+'px';
+      label.style.bottom = (window.innerHeight - rect.bottom + 10)+'px';
     });
     btn.addEventListener('mouseleave', function() {
-      if (label && label.parentNode) label.parentNode.removeChild(label);
+      if (!label) return;
+      if (label.parentNode) label.parentNode.removeChild(label);
+      label = null;
     });
 
     document.body.appendChild(btn);
-
-    // Auto-restore state
+    // Restore state if present
     try {
       const stored = window.localStorage.getItem('__SKIP_TOOL_ENABLED');
       if (stored === '1') { window.__SKIP_TOOL_ENABLED = true; setBtnState(true); }
       else if (stored === '0') { window.__SKIP_TOOL_ENABLED = false; setBtnState(false); }
     } catch(_) {}
-  } catch(e) { console.warn('SkipTool float button inject fail', e); }
+  } catch(e) { /* log error */ }
+})();
+
+// ---- LOGIC: Burst LearningHours fake đủ thời lượng khi seek ----
+(function patchLearningHoursBurst() {
+  // Patch postLearningHours và burst logic if skipped
+  let _postLearningHours = window.postLearningHours || postLearningHours;
+  function safePostLearningHours(durMs = 30000) {
+    if (!window.__SKIP_TOOL_ENABLED) return;
+    return _postLearningHours(durMs);
+  }
+  window.postLearningHours = safePostLearningHours;
+
+  // Patch: khi tua (seeked), gửi burst tính đúng tổng duration vừa skip
+  document.addEventListener('seeked', function(event) {
+    if (!window.__SKIP_TOOL_ENABLED) return;
+    let v = event.target;
+    if (!(v instanceof HTMLVideoElement)) return;
+    if (!window.__LH || !window.__LH.template) return;
+    const prev = (typeof v.__lastTime === 'number') ? v.__lastTime : 0;
+    const cur = v.currentTime || 0;
+    const delta = Math.abs(cur - prev);
+    let toSend = 0;
+    if (delta > 5) {
+      // Tính tổng số burst gửi đủ phần vừa skip
+      let totalDuration = Math.ceil(delta) * 1000;
+      let sent = 0, each = 30000; // 30s 
+      while (sent + each <= totalDuration) {
+        setTimeout(()=>safePostLearningHours(each), sent/10); // tản đều để không quá spam
+        sent += each;
+      }
+      let dư = totalDuration-sent;
+      if (dư > 0) setTimeout(()=>safePostLearningHours(dư), sent/10);
+    }
+  }, true);
+
+  // Khi đã tới >92%, kiểm tra tổng watch time gửi LearningHours >= 92% duration, nếu thiếu gửi bù
+  setInterval(function() {
+    if (!window.__SKIP_TOOL_ENABLED) return;
+    const v = document.querySelector('video');
+    if (!v || !window.__LH || !window.__LH.template) return;
+    const d = v.duration;
+    const ct = v.currentTime;
+    if (d && ct && ct/d > 0.91) {
+      // Ước lượng tổng time đã gửi lên từ LH template count
+      // (hoặc có thể thêm bộ đếm thực tế nếu muốn exact)
+      // Nếu thiếu phần nhỏ, gửi bù cho chắc
+      safePostLearningHours(Math.max(0, d*1000-ct*1000));
+    }
+  }, 8000);
 })();
 
 // Patch: ĐIỀU KIỆN HOẠT ĐỘNG tih năng skip/fake chỉ KHI window.__SKIP_TOOL_ENABLED === true
