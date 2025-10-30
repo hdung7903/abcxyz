@@ -121,6 +121,39 @@
             console.trace('Stack');
             console.groupEnd();
           }
+
+          // Capture LearningHours GraphQL payload and synthesize heartbeats
+          try {
+            const isLearningHours = (typeof url === 'string' && url.includes('/graphql-gateway') && url.includes('opname=LearningHours_SendEvent'))
+              || (typeof url === 'string' && url.includes('/graphql') && (init && init.body && (init.body + '').includes('LearningHours_SendEvent')));
+            if (isLearningHours && method.toUpperCase() === 'POST' && init && init.body) {
+              let bodyText = '';
+              try { bodyText = typeof init.body === 'string' ? init.body : (init.body && init.body.toString ? init.body.toString() : ''); } catch(_) {}
+              let parsed;
+              try { parsed = JSON.parse(bodyText); } catch(_) {}
+              const first = Array.isArray(parsed) ? parsed[0] : parsed;
+              const hb = first && first.variables && first.variables.input && first.variables.input.heartbeat;
+              if (hb && hb.courseId && hb.itemDetails && hb.itemDetails.itemId) {
+                window.__LH = window.__LH || { endpoint: url.split('?')[0], qs: (url.split('?')[1] || '') };
+                window.__LH.template = {
+                  courseId: hb.courseId,
+                  courseBranchId: hb.courseBranchId || undefined,
+                  itemId: hb.itemDetails.itemId,
+                  learnerActivityType: hb.itemDetails.learnerActivityType || 'LECTURE',
+                  deviceId: hb.deviceId,
+                  eventOs: hb.eventOs || (navigator.platform || 'Unknown'),
+                  eventPlatform: hb.eventPlatform || 'WEB'
+                };
+
+                if (!window.__LH.interval) {
+                  window.__LH.interval = setInterval(() => {
+                    try { postLearningHours(30000); } catch(_) {}
+                  }, 25000);
+                  window.addEventListener('beforeunload', () => { try { clearInterval(window.__LH.interval); } catch(_) {} });
+                }
+              }
+            }
+          } catch(_) {}
         } catch(_) {}
         return origFetch.apply(this, arguments);
       };
@@ -155,6 +188,39 @@
           console.trace('Stack');
           console.groupEnd();
         }
+
+        // Capture LearningHours over XHR too
+        try {
+          const isLearningHours = (typeof url === 'string' && url.includes('/graphql-gateway') && url.includes('opname=LearningHours_SendEvent'))
+            || (typeof url === 'string' && url.includes('/graphql'));
+          if (isLearningHours && lastMethod.toUpperCase() === 'POST' && body) {
+            let bodyText = '';
+            try { bodyText = typeof body === 'string' ? body : (body && body.toString ? body.toString() : ''); } catch(_) {}
+            let parsed;
+            try { parsed = JSON.parse(bodyText); } catch(_) {}
+            const first = Array.isArray(parsed) ? parsed[0] : parsed;
+            const hb = first && first.variables && first.variables.input && first.variables.input.heartbeat;
+            if (first && first.operationName === 'LearningHours_SendEvent' && hb && hb.courseId && hb.itemDetails && hb.itemDetails.itemId) {
+              window.__LH = window.__LH || { endpoint: url.split('?')[0], qs: (url.split('?')[1] || '') };
+              window.__LH.template = {
+                courseId: hb.courseId,
+                courseBranchId: hb.courseBranchId || undefined,
+                itemId: hb.itemDetails.itemId,
+                learnerActivityType: hb.itemDetails.learnerActivityType || 'LECTURE',
+                deviceId: hb.deviceId,
+                eventOs: hb.eventOs || (navigator.platform || 'Unknown'),
+                eventPlatform: hb.eventPlatform || 'WEB'
+              };
+
+              if (!window.__LH.interval) {
+                window.__LH.interval = setInterval(() => {
+                  try { postLearningHours(30000); } catch(_) {}
+                }, 25000);
+                window.addEventListener('beforeunload', () => { try { clearInterval(window.__LH.interval); } catch(_) {} });
+              }
+            }
+          }
+        } catch(_) {}
       } catch(_) {}
       return origSend.apply(this, arguments);
     };
@@ -228,6 +294,89 @@
       }
     });
     Object.defineProperty(proto, 'currentTime', { __skipWrapped: true });
+  } catch(_) {}
+})();
+
+// Synthesize LearningHours heartbeats and on-seek bursts
+function postLearningHours(durationMs) {
+  try {
+    if (!window.__LH || !window.__LH.template) return;
+    const endpointBase = window.__LH.endpoint || 'https://www.coursera.org/graphql-gateway';
+    const qs = window.__LH.qs ? ('?' + window.__LH.qs) : '?opname=LearningHours_SendEvent';
+    const url = endpointBase + qs;
+    const t = window.__LH.template;
+    const payload = [
+      {
+        operationName: 'LearningHours_SendEvent',
+        variables: {
+          input: {
+            heartbeat: {
+              courseId: t.courseId,
+              courseBranchId: t.courseBranchId,
+              eventPlatform: t.eventPlatform,
+              userActionType: 'VIDEO_PLAYING',
+              durationMilliSeconds: durationMs,
+              eventOs: t.eventOs,
+              clientDateTime: new Date().toISOString(),
+              deviceId: t.deviceId,
+              itemDetails: {
+                itemId: t.itemId,
+                learnerActivityType: t.learnerActivityType
+              }
+            }
+          }
+        },
+        query: 'mutation LearningHours_SendEvent($input: LearningHours_SendEventInput!) { LearningHours_SendEvent(input: $input) { __typename ... on LearningHours_SendEventSuccess { id __typename } ... on LearningHours_SendEventError { message __typename } } }'
+      }
+    ];
+    fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    }).catch(() => {});
+  } catch(_) {}
+}
+
+(() => {
+  try {
+    const attach = (v) => {
+      if (!(v instanceof HTMLVideoElement)) return;
+      if (v.__lhSeekHooked) return;
+      v.__lhSeekHooked = true;
+      v.addEventListener('seeked', function() {
+        try {
+          if (!window.__LH || !window.__LH.template) return;
+          const prev = (typeof v.__lastTime === 'number') ? v.__lastTime : 0;
+          const cur = v.currentTime || 0;
+          v.__lastTime = cur;
+          const delta = cur - prev;
+          if (delta > 5) {
+            const chunks = Math.max(1, Math.ceil(delta / 30));
+            for (let i = 0; i < chunks; i++) {
+              postLearningHours(30000);
+            }
+          }
+        } catch(_) {}
+      }, true);
+      v.addEventListener('timeupdate', function() {
+        try { v.__lastTime = v.currentTime || 0; } catch(_) {}
+      }, true);
+    };
+
+    // Attach to existing and future videos
+    document.querySelectorAll('video').forEach(attach);
+    const mo = new MutationObserver((ms) => {
+      for (const m of ms) {
+        for (const n of m.addedNodes) {
+          if (n instanceof HTMLVideoElement) attach(n);
+          if (n && n.querySelectorAll) n.querySelectorAll('video').forEach(attach);
+        }
+      }
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
   } catch(_) {}
 })();
 
