@@ -182,6 +182,15 @@
               }
             }
           } catch(_) {}
+
+          // Try extract userId from any JSON bodies we see
+          try {
+            const body = init && init.body;
+            if (body && typeof body === 'string') {
+              const m = body.match(/"userId"\s*:\s*(\d{5,})/);
+              if (m) { window.__CTX = window.__CTX || {}; window.__CTX.userId = m[1]; }
+            }
+          } catch(_) {}
         } catch(_) {}
         return origFetch.apply(this, arguments);
       };
@@ -285,6 +294,24 @@
               } catch(_) {}
             }, 0);
             return;
+          }
+        } catch(_) {}
+
+        // Try extract userId from URL patterns or body
+        try {
+          const u = String(url);
+          // from /user/<id>/ paths
+          let m = u.match(/\/user\/(\d{5,})\//);
+          if (m) { window.__CTX = window.__CTX || {}; window.__CTX.userId = m[1]; }
+          // from any <id>~ prefix we see in response URLs
+          if (!m) {
+            m = u.match(/(^|\/)\s*(\d{5,})(?=~)/);
+            if (m) { window.__CTX = window.__CTX || {}; window.__CTX.userId = m[2]; }
+          }
+          if (body && typeof body === 'string' && !window.__CTX?.userId) {
+            const b = body;
+            const mb = b.match(/"userId"\s*:\s*(\d{5,})/);
+            if (mb) { window.__CTX = window.__CTX || {}; window.__CTX.userId = mb[1]; }
           }
         } catch(_) {}
       } catch(_) {}
@@ -443,6 +470,9 @@ function postLearningHours(durationMs) {
               postLearningHours(30000);
             }
           }
+
+          // If past 92% threshold, try to send completion immediately
+          trySendEndedIfThreshold(v);
         } catch(_) {}
       }, true);
       v.addEventListener('timeupdate', function() {
@@ -450,6 +480,8 @@ function postLearningHours(durationMs) {
           v.__lastTime = v.currentTime || 0;
           const d = v.duration || 0;
           window.__VID = { t: v.__lastTime, d };
+          // Also check threshold on regular updates
+          trySendEndedIfThreshold(v);
         } catch(_) {}
       }, true);
     };
@@ -467,5 +499,40 @@ function postLearningHours(durationMs) {
     mo.observe(document.documentElement, { childList: true, subtree: true });
   } catch(_) {}
 })();
+
+function trySendEndedIfThreshold(video) {
+  try {
+    if (!video) return;
+    const d = Number(video.duration || 0);
+    const t = Number(video.currentTime || 0);
+    if (!d || !t) return;
+    const ratio = t / d;
+    if (ratio < 0.92) return; // target ~92%
+
+    window.__CTX = window.__CTX || {};
+    if (window.__CTX.endedSentFor === (window.location.pathname + '|' + (window.__VID ? window.__VID.d : d))) return;
+
+    // Derive courseSlug and itemId from URL: /learn/:slug/lecture/:itemId
+    const m = window.location.pathname.match(/\/learn\/([^\/]+)\/lecture\/([^\/?#]+)/);
+    if (!m) return;
+    const courseSlug = m[1];
+    const itemId = m[2];
+
+    // User ID: from captured context
+    const userId = window.__CTX.userId;
+    if (!userId) return;
+
+    const url = `https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${courseSlug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
+    fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    }).then(() => {
+      window.__CTX.endedSentFor = window.location.pathname + '|' + (window.__VID ? window.__VID.d : d);
+      console.log('[SkipDebug][ended][auto]', { url, percent: (ratio * 100).toFixed(1) + '%' });
+    }).catch(() => {});
+  } catch(_) {}
+}
 
 
