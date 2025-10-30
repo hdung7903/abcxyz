@@ -122,6 +122,17 @@
             console.groupEnd();
           }
 
+          // Short-circuit noisy analytics/eventing requests client-side
+          try {
+            const u = String(url);
+            const isEventing = /\/api\/rest\/v1\/eventing\/(info|infobatch)/.test(u);
+            const isWA = /\/wa\/?/.test(u) || /tags\.coursera\.org/.test(u);
+            if ((isEventing || isWA) && method.toUpperCase() === 'POST') {
+              const fake = new Response('', { status: 204, statusText: 'No Content' });
+              return Promise.resolve(fake);
+            }
+          } catch(_) {}
+
           // Capture LearningHours GraphQL payload and synthesize heartbeats
           try {
             const isLearningHours = (typeof url === 'string' && url.includes('/graphql-gateway') && url.includes('opname=LearningHours_SendEvent'))
@@ -221,6 +232,27 @@
             }
           }
         } catch(_) {}
+
+        // Short-circuit eventing/analytics XHR
+        try {
+          const u = String(url);
+          const isEventing = /\/api\/rest\/v1\/eventing\/(info|infobatch)/.test(u);
+          const isWA = /\/wa\/?/.test(u) || /tags\.coursera\.org/.test(u);
+          if (isEventing || isWA) {
+            // Pretend success without sending
+            // Simulate readyState/done callbacks to avoid breaking callers
+            const xhr = this;
+            setTimeout(() => {
+              try {
+                Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
+                Object.defineProperty(xhr, 'status', { value: 204, configurable: true });
+                xhr.onreadystatechange && xhr.onreadystatechange();
+                xhr.onload && xhr.onload();
+              } catch(_) {}
+            }, 0);
+            return;
+          }
+        } catch(_) {}
       } catch(_) {}
       return origSend.apply(this, arguments);
     };
@@ -246,6 +278,24 @@
 // Enforce forward seek: prevent scripts from snapping video back to older time
 (() => {
   try {
+    // Override navigator.sendBeacon to no-op on eventing/analytics
+    try {
+      const origBeacon = navigator.sendBeacon && navigator.sendBeacon.bind(navigator);
+      if (origBeacon && !navigator.sendBeacon.__skipWrapped) {
+        const wrapped = function(url, data) {
+          try {
+            const u = String(url || '');
+            const isEventing = /\/api\/rest\/v1\/eventing\/(info|infobatch)/.test(u);
+            const isWA = /\/wa\/?/.test(u) || /tags\.coursera\.org/.test(u);
+            if (isEventing || isWA) return true; // report as queued successfully
+          } catch(_) {}
+          return origBeacon(url, data);
+        };
+        Object.defineProperty(navigator, 'sendBeacon', { value: wrapped, configurable: true });
+        navigator.sendBeacon.__skipWrapped = true;
+      }
+    } catch(_) {}
+
     const proto = HTMLMediaElement.prototype;
     const desc = Object.getOwnPropertyDescriptor(proto, 'currentTime');
     if (!desc || desc.__skipWrapped) return;
