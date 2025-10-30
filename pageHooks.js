@@ -609,40 +609,221 @@ function postLearningHours(durationMs) {
   } catch(_) {}
 })();
 
-function trySendEndedIfThreshold(video) {
+// Sửa lỗi scop popover và nâng log, bổ sung gửi progress trước khi ended ---
+(function setupSkipToolButton() {
   try {
-    if (!video) return;
-    const d = Number(video.duration || 0);
-    const t = Number(video.currentTime || 0);
-    if (!d || !t) return;
-    const ratio = t / d;
-    if (ratio < 0.92) { window.__CTX = window.__CTX || {}; window.__CTX.thresholdPassed = false; return; }
-    window.__CTX = window.__CTX || {};
-    window.__CTX.thresholdPassed = true;
+    if (document.getElementById('skip-tool-float-btn')) return;
+    let popover = null;   // moved to outer scope!
+    const style = document.createElement('style');
+    style.innerHTML = `
+      #skip-tool-float-btn {
+        position: fixed;
+        right: 32px;
+        bottom: 38px;
+        z-index: 2147483647;
+        width: 60px; height: 60px;
+        border-radius: 50%;
+        background: linear-gradient(135deg,#00c6ff,#0072ff 80%);
+        box-shadow: 0 5px 35px 0 rgba(24,118,255,0.30),0 1.5px 8px 0 rgba(28,60,120,0.07);
+        color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 32px;
+        cursor: pointer;
+        opacity: 0.97;
+        outline: none; border: none;
+        transition: background 0.21s, box-shadow 0.19s, opacity 0.19s, filter 0.15s;
+        user-select: none;
+        overflow: visible;
+      }
+      #skip-tool-float-btn.off {
+        background: linear-gradient(135deg,#b0b0b0,#747474 80%);
+        color: #f9f9f9;
+        filter: grayscale(0.4) brightness(0.85);
+        opacity: 0.77;
+      }
+      #skip-tool-float-btn:active {
+        box-shadow: 0 1px 6px 0 #2196F3;
+        opacity: 0.88;
+      }
+      #skip-tool-float-btn .twicon {
+        transition: transform 0.23s cubic-bezier(.82,0,.47,1.26);
+      }
+      #skip-tool-float-btn.active .twicon {
+        transform: scale(1.22) rotate(16deg);
+      }
+      #skip-tool-float-btn-ripple {
+        position: absolute; left: 0; top: 0;
+        width: 100%; height: 100%; border-radius:50%;
+        background: rgba(255,255,255,.28);
+        opacity: 0; pointer-events:none;
+        transition: opacity 0.31s, transform 0.35s;
+      }
+      #skip-tool-float-btn.ripple #skip-tool-float-btn-ripple {
+        opacity: 1; transform: scale(1.65);
+      }
+      #skip-tool-float-btn-label {
+        pointer-events: none;
+        position: absolute; right: 72px; bottom: 10px;
+        background: rgba(24,24,30,.97); color: #d2e3ff;
+        padding: 9px 22px; border-radius: 10px; font-size: 15px; line-height: 1.45;
+        box-shadow: 0px 3px 8px 0 rgba(24,30,70,0.19);
+        font-weight: 500; letter-spacing: 0.01em;
+        opacity: 1;
+        white-space: nowrap;
+        filter: drop-shadow(0 1.5px 2px #0001);
+      }
+    `;
+    document.head.appendChild(style);
 
-    if (window.__CTX.endedSentFor === (window.location.pathname + '|' + (window.__VID ? window.__VID.d : d))) return;
+    // Button
+    const btn = document.createElement('div');
+    btn.id = 'skip-tool-float-btn';
+    btn.innerHTML = `
+      <span class="twicon" style="font-size:35px;display:inline-block">⏩</span>
+      <span id="skip-tool-float-btn-ripple"></span>
+    `;
+    btn.title = 'Bật/Tắt Skip Tool';
+    btn.className = window.__SKIP_TOOL_ENABLED ? 'active' : 'off';
 
-    // Derive courseSlug and itemId from URL: /learn/:slug/lecture/:itemId
+    // State và log
+    let logArr = [], logMax = 18;
+    window.__SKIP_SEND_LOG = function(type, val, data) {
+      let msg = `[${new Date().toLocaleTimeString()}] `;
+      if (type === 'LH') msg += `Gửi LearningHours ${val} ms`;
+      if (type === 'PROGRESS') msg += `Gửi /videoEvents/progress status:${data}`;
+      if (type === 'ENDED') msg += `Gửi /videoEvents/ended status:${data}`;
+      logArr.push(msg);
+      if (logArr.length > logMax) logArr = logArr.slice(-logMax);
+      renderPopoverIfOpen();
+    };
+    function renderPopoverIfOpen() {
+      if (!popover || !popover.parentNode) return;
+      let on = !!window.__SKIP_TOOL_ENABLED;
+      popover.innerHTML = `
+        <span id="skip-pop-close">&times;</span>
+        <div id="skip-pop-status" class="${on?'on':'off'}">${on?'● ĐANG BẬT':'● ĐANG TẮT'}</div>
+        <div class="skip-pop-row">Log:</div>
+        <div id="skip-pop-log">${logArr.length?logArr.map(x=>`<div>- ${x}</div>`).join(''): '<i>Chưa gửi/hành động nào!</i>'}</div>
+        <button id="skip-pop-toggle" class="${on?'':'off'}">${on?'Tắt Tool':'Bật Tool'}</button>
+      `;
+      popover.querySelector('#skip-pop-toggle').onclick = function() {
+        window.__SKIP_TOOL_ENABLED = !window.__SKIP_TOOL_ENABLED;
+        setBtnState(window.__SKIP_TOOL_ENABLED);
+        window.localStorage.setItem('__SKIP_TOOL_ENABLED', window.__SKIP_TOOL_ENABLED ? '1' : '0');
+        renderPopoverIfOpen();
+      };
+      popover.querySelector('#skip-pop-close').onclick = function() {
+        if(popover&&popover.parentNode)popover.parentNode.removeChild(popover);
+        popover=null;
+      };
+    }
+    function setBtnState(enabled) {
+      if (enabled) {
+        btn.classList.add('active'); btn.classList.remove('off');
+        btn.title = 'Đang bật: Tự động skip và tích xanh (click để mở log/tool)';
+      } else {
+        btn.classList.remove('active'); btn.classList.add('off');
+        btn.title = 'ĐANG TẮT: Không tự động skip/fake time (click để mở tool)';
+      }
+    }
+    window.__SKIP_TOOL_ENABLED = (window.__SKIP_TOOL_ENABLED === undefined) ? true : window.__SKIP_TOOL_ENABLED;
+    setBtnState(window.__SKIP_TOOL_ENABLED);
+
+    btn.addEventListener('click', function (e) {
+      if(popover&&popover.parentNode){popover.parentNode.removeChild(popover);popover=null;return;}
+      popover=document.createElement('div');popover.id='skip-tool-float-btn-popover';document.body.appendChild(popover);setTimeout(renderPopoverIfOpen,20);e.preventDefault();e.stopPropagation();return false;
+    });
+    // Tooltip
+    let label;
+    btn.addEventListener('mouseenter', function() {
+      if (label) return;
+      label = document.createElement('span');
+      label.id = 'skip-tool-float-btn-label';
+      label.textContent = window.__SKIP_TOOL_ENABLED ? 'Đang bật: Skip & Tick xanh tự động' : 'TẮT: Không skip/fake';
+      document.body.appendChild(label);
+      const rect = btn.getBoundingClientRect();
+      label.style.right = (window.innerWidth - rect.right + 18)+'px';
+      label.style.bottom = (window.innerHeight - rect.bottom + 10)+'px';
+    });
+    btn.addEventListener('mouseleave', function() {
+      if (!label) return;
+      if (label.parentNode) label.parentNode.removeChild(label);
+      label = null;
+    });
+
+    document.body.appendChild(btn);
+    document.addEventListener('mousedown', function(ev){
+      if(popover&&popover.parentNode&&!popover.contains(ev.target)&&ev.target!==btn){popover.parentNode.removeChild(popover);popover=null;}
+    },true);
+    // Restore state if present
+    try {
+      const stored = window.localStorage.getItem('__SKIP_TOOL_ENABLED');
+      if (stored === '1') { window.__SKIP_TOOL_ENABLED = true; setBtnState(true); }
+      else if (stored === '0') { window.__SKIP_TOOL_ENABLED = false; setBtnState(false); }
+    } catch(_) {}
+  } catch(e) { /* log error */ }
+})();
+
+// --- Logic fake progress -> ended ---
+async function trySendCourseraProgressFirst(video) {
+  // Gửi progress giống Coursera để backend cho tick xanh
+  let progressUrl;
+  try {
+    if(!video) return;
+    // Lấy data từ url hiện tại
     const m = window.location.pathname.match(/\/learn\/([^\/]+)\/lecture\/([^\/?#]+)/);
     if (!m) return;
-    const courseSlug = m[1];
-    const itemId = m[2];
-
-    // User ID: from captured context
-    const userId = window.__CTX.userId;
+    const courseSlug=m[1],itemId=m[2];
+    const userId=window.__CTX?.userId;
     if (!userId) return;
-
-    const url = `https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${courseSlug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
-    fetch(url, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ contentRequestBody: {} })
-    }).then(() => {
-      window.__CTX.endedSentFor = window.location.pathname + '|' + (window.__VID ? window.__VID.d : d);
-      console.log('[SkipDebug][ended][auto]', { url, percent: (ratio * 100).toFixed(1) + '%' });
-    }).catch(() => {});
-  } catch(_) {}
+    progressUrl=`https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${courseSlug}/item/${itemId}/lecture/videoEvents/progress?autoEnroll=false`;
+    const tCur=Math.floor(video.currentTime||0);
+    const duration=Math.floor(video.duration||0);
+    let payload={ "position": tCur, "duration": duration };
+    let r = await fetch(progressUrl,{
+      method:'POST', credentials:'include',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    window.__SKIP_SEND_LOG && window.__SKIP_SEND_LOG('PROGRESS',r.status);
+    return r.status>=200&&r.status<300;
+  } catch(e) { window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('PROGRESS','error'); return false; }
+}
+// Sửa hàm trySendEndedIfThreshold: gọi progress trước nếu cần
+window._orig_trySendEnded = window.trySendEndedIfThreshold || trySendEndedIfThreshold;
+window.trySendEndedIfThreshold = async function(video) {
+  try {
+    if (!window.__SKIP_TOOL_ENABLED) return;
+    if (!video) return;
+    const d = Number(video.duration||0), t = Number(video.currentTime||0);
+    if (!d||!t) return;
+    const ratio = t/d;
+    if (ratio<0.92) { window.__CTX=window.__CTX||{}; window.__CTX.thresholdPassed=false; return; }
+    window.__CTX=window.__CTX||{}; window.__CTX.thresholdPassed=true;
+    const completedKey=window.location.pathname+'|'+(window.__VID?window.__VID.d:d)+'|patch';
+    if (window.__CTX.endedSentFor === completedKey) return;
+    // Kiểm tra đã gọi progress chưa
+    let progressOK=false;
+    try {
+      progressOK=!!window.__CTX.progressOK;
+      if(!progressOK) { progressOK = await trySendCourseraProgressFirst(video); window.__CTX.progressOK=progressOK; }
+    } catch(_){}
+    if (!progressOK) {window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('PROGRESS','fail'); return;}
+    // Tiếp tục gửi ended
+    const m=window.location.pathname.match(/\/learn\/([^\/]+)\/lecture\/([^\/?#]+)/);
+    if(!m)return;
+    const courseSlug=m[1],itemId=m[2];
+    const userId=window.__CTX.userId;
+    if(!userId)return;
+    const url=`https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${courseSlug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
+    let res=await fetch(url,{
+      method:'POST',credentials:'include',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({contentRequestBody:{}})
+    });
+    window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('ENDED',res.status);
+    if(res.status>=200&&res.status<300) window.__CTX.endedSentFor=completedKey;
+  } catch(_){}
 }
 
 // ---- Improved FLOAT BUTTON UI using tailwind/antd inspiration ----
