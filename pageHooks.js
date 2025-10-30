@@ -453,44 +453,66 @@ try {
   }
 } catch (e) { console.warn('seekable patch fail', e); }
 
-// Enhance mutation observer: remove any element or text node containing banner-message recursively
+// Enhance mutation observer: remove only exact banner element!
 try {
-  const SKIP_BANNER_STRINGS = [
-    'Skipping forward is only available',
-    'You cannot skip', // fallback, edit if new string
-    'skip', // fuzzy for other languages
-  ];
-
-  function removeBannerDeep(node) {
+  const EXACT_SKIP_BANNER = 'Skipping forward is only available on video sections you have already watched';
+  function isBannerNode(node) {
+    if (!node) return false;
+    // Không xóa nếu là <body> hoặc <html>
+    if (node.nodeName === 'BODY' || node.nodeName === 'HTML') return false;
+    // Chỉ xóa nếu là element có textContent chứa đúng toàn bộ câu banner, hoặc là text node đúng exact.
+    const canRemove = (n) => {
+      if (!n) return false;
+      // Text node
+      if (n.nodeType === 3) {
+        return (n.textContent||'').trim() === EXACT_SKIP_BANNER;
+      }
+      // Element node
+      if (n.textContent && n.textContent.trim() === EXACT_SKIP_BANNER) {
+        return true;
+      }
+      return false;
+    };
+    if (canRemove(node)) return true;
+    // check children for exact chỉ nếu là element nhỏ (div, p, span, li...)
+    if (node.children && node.children.length <= 5) {
+      for (const c of node.childNodes) {
+        if (canRemove(c)) return true;
+      }
+    }
+    // Hoặc role="alert", class chứa "banner" + text chính xác
+    if (node instanceof Element) {
+      if ((node.getAttribute('role') === 'alert' || (node.className||'').toLowerCase().includes('banner')) &&
+          (node.textContent||'').includes(EXACT_SKIP_BANNER)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  function removeBannerDeepSafe(node) {
     try {
       if (!node) return;
-      // Check text content recursively
-      const text = (node.textContent || '').toLowerCase();
-      if (SKIP_BANNER_STRINGS.some(k => text.includes(k.toLowerCase()))) {
-        // Removing node, with logging
-        console.log('[SkipDebug][rm-banner]', node);
+      if (isBannerNode(node)) {
+        console.log('[SkipDebug][rm-banner-strict]', node);
         if (node.remove) node.remove();
         else if (node.parentNode) node.parentNode.removeChild(node);
         return;
       }
-      // Recurse children
       if (node.childNodes && node.childNodes.length) {
-        Array.from(node.childNodes).forEach(removeBannerDeep);
+        Array.from(node.childNodes).forEach(removeBannerDeepSafe);
       }
     } catch(_) {}
   }
-
-  const moAll = new MutationObserver((mutations) => {
+  const moStrict = new MutationObserver((mutations) => {
     for (const m of mutations) {
       for (const n of m.addedNodes) {
-        removeBannerDeep(n);
+        removeBannerDeepSafe(n);
       }
     }
   });
-  moAll.observe(document.documentElement, { childList: true, subtree: true });
-  // Also pass over after load
-  setTimeout(() => removeBannerDeep(document.body), 2000);
-} catch (e) { console.warn('robust banner removal patch fail', e); }
+  moStrict.observe(document.documentElement, { childList: true, subtree: true });
+  setTimeout(() => removeBannerDeepSafe(document.body), 2000);
+} catch (e) { console.warn('strict banner removal patch fail', e); }
 
 // Synthesize LearningHours heartbeats and on-seek bursts
 function postLearningHours(durationMs) {
