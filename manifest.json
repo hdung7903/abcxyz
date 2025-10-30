@@ -23,6 +23,12 @@
       "run_at": "document_start"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["pageHooks.js"],
+      "matches": ["https://www.coursera.org/*"]
+    }
+  ],
   "action": {
     "default_popup": "popup.html"
   },
