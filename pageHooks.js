@@ -1134,4 +1134,76 @@ window.trySendEndedIfThreshold = async function(video) {
   }
 })();
 
+// --- AUTO-PLAY REAL đoạn cuối để Coursera tick xanh chuẩn ---
+let skipPlayNativeTask = null;
+window.skipForceRealPlayback = async function(video) {
+  if (!video || !window.__SKIP_TOOL_ENABLED) return;
+  if (skipPlayNativeTask && skipPlayNativeTask.timer) clearInterval(skipPlayNativeTask.timer);
+  skipPlayNativeTask = { stopped: false };
+  // Set playbackRate max, force play
+  try { video.playbackRate = 16; } catch(_) { video.playbackRate = 2; }
+  try { video.muted = true; } catch(_) {}
+  video.currentTime = Math.max(video.currentTime, Math.floor(video.duration*0.90));
+  try { video.play(); } catch(_) {}
+  let showLog = function(msg) { window.__SKIP_SEND_LOG && window.__SKIP_SEND_LOG('REAL', msg); };
+  showLog('Bắt đầu auto-play real đoạn cuối (tick xanh nhanh nhất)');
+  // Cập nhật log trên popover progress
+  if (document.visibilityState !== 'visible') {
+    try { window.focus(); } catch(_) {}
+    showLog('⚠️ Tab này nên để foreground để Coursera nhận play real!');
+  }
+  skipPlayNativeTask.timer = setInterval(async function() {
+    if (!window.__SKIP_TOOL_ENABLED) { video.pause(); clearInterval(skipPlayNativeTask.timer); showLog('Ng. dùng đã tắt auto-play (pause)'); return; }
+    let prog = ((video.currentTime||0)/(video.duration||1))*100;
+    showLog(`Auto-play real: ${(video.currentTime||0).toFixed(1)}/${(video.duration||0).toFixed(1)} (${prog.toFixed(1)}%) @${video.playbackRate}x`);
+    if (video.currentTime+1 >= 0.96*video.duration) {
+      clearInterval(skipPlayNativeTask.timer);
+      video.pause();
+      showLog('Enough auto-played! Đang gửi tick xanh lại...');
+      let ok = await window.trySendEndedIfThreshold(video);
+      if (ok) showLog('Tick xanh thành công! Dừng auto-play.');
+      else showLog('Vẫn chưa tick xanh, có thể play lại thêm hoặc thử reload!');
+    }
+  }, 1000);
+};
+// Khi tất cả các patch fake khác thất bại, gọi skipForceRealPlayback(video) ở cuối trySendEndedIfThreshold()
+window._orig_trySendEnded = window.trySendEndedIfThreshold || trySendEndedIfThreshold;
+window.trySendEndedIfThreshold = async function(video) {
+  try {
+    if (!window.__SKIP_TOOL_ENABLED) return;
+    if (!video) return;
+    const d = Number(video.duration||0), t = Number(video.currentTime||0);
+    if (!d||!t) return;
+    const ratio = t/d;
+    if (ratio<0.92) { window.__CTX=window.__CTX||{}; window.__CTX.thresholdPassed=false; return; }
+    window.__CTX=window.__CTX||{}; window.__CTX.thresholdPassed=true;
+    const completedKey=window.location.pathname+'|'+(window.__VID?window.__VID.d:d)+'|patch';
+    if (window.__CTX.endedSentFor === completedKey) return true;
+    // Kiểm tra đã gọi progress chưa
+    let progressOK=false;
+    try {
+      progressOK=!!window.__CTX.progressOK;
+      if(!progressOK) { progressOK = await trySendCourseraProgressFirst(video); window.__CTX.progressOK=progressOK; }
+    } catch(e){window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('PROGRESS','ex',e.message);}
+    if (!progressOK) {window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('PROGRESS','fail'); return;}
+    // Tiếp tục gửi ended
+    const m=window.location.pathname.match(/\/learn\/([^\/]+)\/lecture\/([^\/?#]+)/);
+    if(!m)return;
+    const courseSlug=m[1],itemId=m[2];
+    const userId=window.__CTX.userId;
+    if(!userId)return;
+    const url=`https://www.coursera.org/api/opencourse.v1/user/${userId}/course/${courseSlug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
+    let res=await fetch(url,{
+      method:'POST',credentials:'include',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({contentRequestBody:{}})
+    });
+    window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('ENDED',res.status);
+    if(res.status>=200&&res.status<300){window.__CTX.endedSentFor=completedKey;return true;}
+    // Nếu tất cả các patch fake vẫn FAIL, auto-play real để chắc chắn tick xanh!
+    window.skipForceRealPlayback && window.skipForceRealPlayback(video);
+    return false;
+  } catch(e){window.__SKIP_SEND_LOG&&window.__SKIP_SEND_LOG('ENDED','ex',e.message);}
+}
+
 
