@@ -1,5 +1,9 @@
 (() => {
   const BANNER_TEXT = 'Skipping forward is only available on video sections you have already watched';
+  const CONFIG_KEY = '__SkipDebugConfig';
+  try {
+    window[CONFIG_KEY] = window[CONFIG_KEY] || { suppressBanner: false };
+  } catch(_) {}
 
   function nodeContainsBanner(node) {
     try {
@@ -17,11 +21,33 @@
     return false;
   }
 
+  function cssPath(el) {
+    try {
+      if (!(el instanceof Element)) return '';
+      const parts = [];
+      while (el && parts.length < 6) {
+        let part = el.nodeName.toLowerCase();
+        if (el.id) { part += `#${el.id}`; parts.unshift(part); break; }
+        if (el.classList && el.classList.length) part += '.' + Array.from(el.classList).slice(0,2).join('.');
+        const parent = el.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children).filter(x => x.nodeName === el.nodeName);
+          if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(el)+1})`;
+        }
+        parts.unshift(part);
+        el = parent;
+      }
+      return parts.join(' > ');
+    } catch(_) { return ''; }
+  }
+
   function logBanner(eventName, parent, child) {
     try {
       console.group('[SkipBanner]', eventName);
       if (parent) console.log('parent:', parent);
       if (child) console.log('child:', child);
+      if (parent) console.log('parentPath:', cssPath(parent));
+      if (child && child instanceof Element) console.log('childPath:', cssPath(child));
       console.log('time:', new Date().toISOString());
       console.trace('Stack');
       console.groupEnd();
@@ -36,6 +62,12 @@
         const child = args[0];
         if (nodeContainsBanner(child) || nodeContainsBanner(this)) {
           logBanner(method, this, child);
+          try {
+            if (window[CONFIG_KEY] && window[CONFIG_KEY].suppressBanner) {
+              // Skip inserting the banner to allow testing without UI restriction
+              return child;
+            }
+          } catch(_) {}
         }
       } catch(_) {}
       return orig.apply(this, args);
@@ -74,6 +106,20 @@
             console.group('[SkipDebug][fetch]');
             console.log('method:', method);
             console.log('url:', url);
+            try {
+              const body = init && init.body;
+              if (body) {
+                if (typeof body === 'string') {
+                  console.log('body(str):', body.slice(0, 500));
+                } else if (body instanceof URLSearchParams) {
+                  console.log('body(params):', body.toString().slice(0, 500));
+                } else if (body instanceof Blob) {
+                  console.log('body(blob):', body.type, body.size);
+                } else {
+                  console.log('body(obj):', body);
+                }
+              }
+            } catch(_) {}
             console.trace('Stack');
             console.groupEnd();
           }
@@ -101,6 +147,13 @@
           console.group('[SkipDebug][xhr]');
           console.log('method:', lastMethod);
           console.log('url:', url);
+          try {
+            if (typeof body === 'string') {
+              console.log('body(str):', body.slice(0, 500));
+            } else if (body) {
+              console.log('body:', body);
+            }
+          } catch(_) {}
           console.trace('Stack');
           console.groupEnd();
         }
