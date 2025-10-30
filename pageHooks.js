@@ -177,4 +177,58 @@
   console.log('[SkipDebug] hooks installed (page)');
 })();
 
+// Enforce forward seek: prevent scripts from snapping video back to older time
+(() => {
+  try {
+    const proto = HTMLMediaElement.prototype;
+    const desc = Object.getOwnPropertyDescriptor(proto, 'currentTime');
+    if (!desc || desc.__skipWrapped) return;
+
+    const SEEK_WINDOW_MS = 3000; // protect target for 3s
+    const SLACK_SEC = 0.25; // tolerance
+
+    function now() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
+
+    function ensureGuards(video) {
+      if (video.__seekGuardInstalled) return;
+      video.__seekGuardInstalled = true;
+      video.addEventListener('timeupdate', function() {
+        try {
+          if (typeof video.__desiredTime === 'number' && now() < (video.__desiredUntil || 0)) {
+            const t = desc.get.call(video);
+            if (t + SLACK_SEC < video.__desiredTime) {
+              desc.set.call(video, video.__desiredTime);
+            }
+          }
+        } catch(_) {}
+      }, true);
+    }
+
+    Object.defineProperty(proto, 'currentTime', {
+      configurable: true,
+      enumerable: desc.enumerable,
+      get: function() {
+        return desc.get.call(this);
+      },
+      set: function(v) {
+        try {
+          ensureGuards(this);
+          const prev = desc.get.call(this);
+          if (typeof v === 'number' && v > prev + SLACK_SEC) {
+            this.__desiredTime = v;
+            this.__desiredUntil = now() + SEEK_WINDOW_MS;
+          } else if (typeof this.__desiredTime === 'number' && now() < (this.__desiredUntil || 0)) {
+            if (typeof v === 'number' && v + SLACK_SEC < this.__desiredTime) {
+              // Ignore backward snap during protection window
+              return;
+            }
+          }
+        } catch(_) {}
+        return desc.set.call(this, v);
+      }
+    });
+    Object.defineProperty(proto, 'currentTime', { __skipWrapped: true });
+  } catch(_) {}
+})();
+
 
