@@ -428,6 +428,70 @@
   } catch(_) {}
 })();
 
+// Patch seekable to always make video fully seekable
+try {
+  const proto = HTMLMediaElement.prototype;
+  const seekableDesc = Object.getOwnPropertyDescriptor(proto, 'seekable');
+  if (seekableDesc) {
+    Object.defineProperty(proto, 'seekable', {
+      configurable: true,
+      enumerable: seekableDesc.enumerable,
+      get: function() {
+        // Always make full range seekable
+        const duration = (typeof this.duration === 'number' && !isNaN(this.duration) && this.duration > 0) ? this.duration : 99999;
+        return {
+          length: 1,
+          start: () => 0,
+          end: () => duration,
+          // enable for..of, item, etc.
+          [Symbol.iterator]: function* () { yield this; },
+          0: { start: () => 0, end: () => duration },
+        };
+      }
+    });
+    console.log('[SkipDebug] Patched HTMLVideoElement.prototype.seekable');
+  }
+} catch (e) { console.warn('seekable patch fail', e); }
+
+// Enhance mutation observer: remove any element or text node containing banner-message recursively
+try {
+  const SKIP_BANNER_STRINGS = [
+    'Skipping forward is only available',
+    'You cannot skip', // fallback, edit if new string
+    'skip', // fuzzy for other languages
+  ];
+
+  function removeBannerDeep(node) {
+    try {
+      if (!node) return;
+      // Check text content recursively
+      const text = (node.textContent || '').toLowerCase();
+      if (SKIP_BANNER_STRINGS.some(k => text.includes(k.toLowerCase()))) {
+        // Removing node, with logging
+        console.log('[SkipDebug][rm-banner]', node);
+        if (node.remove) node.remove();
+        else if (node.parentNode) node.parentNode.removeChild(node);
+        return;
+      }
+      // Recurse children
+      if (node.childNodes && node.childNodes.length) {
+        Array.from(node.childNodes).forEach(removeBannerDeep);
+      }
+    } catch(_) {}
+  }
+
+  const moAll = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const n of m.addedNodes) {
+        removeBannerDeep(n);
+      }
+    }
+  });
+  moAll.observe(document.documentElement, { childList: true, subtree: true });
+  // Also pass over after load
+  setTimeout(() => removeBannerDeep(document.body), 2000);
+} catch (e) { console.warn('robust banner removal patch fail', e); }
+
 // Synthesize LearningHours heartbeats and on-seek bursts
 function postLearningHours(durationMs) {
   try {
