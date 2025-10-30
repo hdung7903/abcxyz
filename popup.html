@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coursera Request Blocker</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      margin: 0;
+    }
+    
+    h1 {
+      font-size: 18px;
+      margin: 0 0 15px 0;
+      color: #333;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    
+    .status {
+      padding: 10px;
+      border-radius: 5px;
+      text-align: center;
+      font-weight: bold;
+    }
+    
+    .status.enabled {
+      background-color: #4CAF50;
+      color: white;
+    }
+    
+    .status.disabled {
+      background-color: #f44336;
+      color: white;
+    }
+    
+    button {
+      padding: 10px 20px;
+      font-size: 14px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      background-color: #2196F3;
+      color: white;
+      transition: background-color 0.3s;
+    }
+    
+    button:hover {
+      background-color: #0b7dda;
+    }
+    
+    .info {
+      font-size: 12px;
+      color: #666;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🛡️ Coursera Request Blocker</h1>
+    
+    <div id="status" class="status enabled">
+      Đang chặn request
+    </div>
+    
+    <button id="toggleBtn">Tắt chặn</button>
+    
+    <div class="info">
+      Extension này chặn request đến:<br>
+      <code>coursera.org/api/rest/v1/eventing/infobatch</code>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

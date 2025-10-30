@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Coursera Request Blocker",
+  "version": "1.0.0",
+  "description": "Chặn request đến Coursera eventing API",
+  "permissions": [
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback"
+  ],
+  "host_permissions": [
+    "https://www.coursera.org/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}

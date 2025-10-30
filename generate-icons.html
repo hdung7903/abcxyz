@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Icons</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      text-align: center;
+    }
+    canvas {
+      border: 1px solid #ddd;
+      margin: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Icon Generator</h1>
+  <p>Click các nút bên dưới để tải icon:</p>
+  
+  <div>
+    <canvas id="canvas16" width="16" height="16"></canvas>
+    <canvas id="canvas48" width="48" height="48"></canvas>
+    <canvas id="canvas128" width="128" height="128"></canvas>
+  </div>
+  
+  <div>
+    <button onclick="downloadIcon(16)">Tải icon 16x16</button>
+    <button onclick="downloadIcon(48)">Tải icon 48x48</button>
+    <button onclick="downloadIcon(128)">Tải icon 128x128</button>
+    <button onclick="downloadAll()">Tải tất cả</button>
+  </div>
+
+  <script>
+    function drawIcon(canvas, size) {
+      const ctx = canvas.getContext('2d');
+      
+      // Background
+      ctx.fillStyle = '#2196F3';
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, size / 6.4);
+      ctx.fill();
+      
+      // Circle with line (block symbol)
+      const center = size / 2;
+      const radius = size / 3.2;
+      const lineWidth = size / 16;
+      
+      // White circle
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      ctx.arc(center, center, radius, 0, 2 * Math.PI);
+      ctx.stroke();
+      
+      // White line (diagonal slash)
+      ctx.beginPath();
+      ctx.moveTo(center - radius * 0.7, center);
+      ctx.lineTo(center + radius * 0.7, center);
+      ctx.stroke();
+    }
+    
+    // Draw all icons on load
+    ['16', '48', '128'].forEach(size => {
+      const canvas = document.getElementById('canvas' + size);
+      drawIcon(canvas, parseInt(size));
+    });
+    
+    function downloadIcon(size) {
+      const canvas = document.getElementById('canvas' + size);
+      const link = document.createElement('a');
+      link.download = `icon${size}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+    
+    function downloadAll() {
+      setTimeout(() => downloadIcon(16), 0);
+      setTimeout(() => downloadIcon(48), 200);
+      setTimeout(() => downloadIcon(128), 400);
+    }
+  </script>
+</body>
+</html>
