@@ -5,7 +5,8 @@
   "description": "Chặn request đến Coursera eventing API",
   "permissions": [
     "declarativeNetRequest",
-    "declarativeNetRequestFeedback"
+    "declarativeNetRequestFeedback",
+    "webRequest"
   ],
   "host_permissions": [
     "https://www.coursera.org/*"

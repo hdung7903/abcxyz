@@ -34,6 +34,9 @@
     },
     "condition": {
       "urlFilter": "https://www.coursera.org/api/rest/v1/eventing/info",
+      "requestMethods": [
+        "post"
+      ],
       "resourceTypes": [
         "xmlhttprequest",
         "main_frame",
@@ -49,6 +52,20 @@
         "websocket",
         "webtransport",
         "webbundle",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "/api/rest/v1/eventing/",
+      "requestMethods": ["post"],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
         "other"
       ]
     }

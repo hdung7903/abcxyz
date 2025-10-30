@@ -36,3 +36,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
+// Passive network observer to help diagnose what fires on seek
+// Requires "webRequest" permission; does not block
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    // Only log POSTs to Coursera to reduce noise
+    if (details.method === 'POST') {
+      console.log('[Coursera Request]', {
+        url: details.url,
+        method: details.method,
+        type: details.type
+      });
+    }
+  },
+  { urls: ["https://www.coursera.org/*"], types: ["xmlhttprequest", "other", "ping"] },
+  ["requestBody"]
+);
